@@ -1,4 +1,6 @@
 #include "utils/Any.hpp"
+#include "utils/SharePtr.hpp"
+#include "utils/UniquePtr.hpp"
 #include <iostream>
 #include <string>
 #include <vector>
@@ -24,20 +26,36 @@ struct Object {
 };
 
 struct Foo
+{
+    Foo(int n = 0) noexcept : bar(n)
     {
-        Foo(int n = 0) noexcept : bar(n)
-        {
-            cout << "Foo::Foo(), bar = " << bar << " @ " << this << '\n';
-        }
-        ~Foo()
-        {
-            cout << "Foo::~Foo(), bar = " << bar << " @ " << this << '\n';
-        }
-        int getBar() const noexcept { return bar; }
-        string print() const { return to_string(bar); }
-    private:
-        int bar;
-    };
+        cout << "Foo::Foo(), bar = " << bar << " @ " << this << '\n';
+    }
+    ~Foo()
+    {
+        cout << "Foo::~Foo(), bar = " << bar << " @ " << this << '\n';
+    }
+    int getBar() const noexcept { return bar; }
+    string print() const { return to_string(bar); }
+private:
+    int bar;
+};
+
+struct Doo
+{
+    Doo() { cout << "Doo ctor\n"; }
+    Doo(const Doo&) { cout << "Doo copy ctor\n"; }
+    Doo(Doo&&) { cout << "Doo move ctor\n"; }
+    ~Doo() { cout << "~Doo dtor\n"; }
+    Doo(int v): val(v){ cout << "Doo ctor\n"; }
+    int val;
+};
+
+void legacy_api(Doo* owning_foo)
+{
+    std::cout << __func__ << '\n';
+    delete owning_foo;
+}
 
 void AnyTest(){
 Any n;
@@ -199,8 +217,52 @@ void SharedPtrTest() {
     print();
 }
 
+void UniquePtrTest(){
+     cout << "Example constructor(1)...\n";
+    UniquePtr<Doo> up1a;
+    UniquePtr<Doo> up1b(nullptr);
+    cout << "Example constructor(2)...\n";
+    {
+        UniquePtr<Doo> up2(new Doo());
+    }
+    cout << "Example constructor(3)...\n";
+    {
+        UniquePtr<Doo> up3a(new Doo);
+        UniquePtr<Doo> up3b(move(up3a));
+    }
+    cout << "Example constructor(4)...\n";
+    {
+        UniquePtr<Doo> up4a(new Doo);
+        UniquePtr<Doo> up4b = move(up4a);
+    }
+
+    UniquePtr<Doo> managed_foo(new Doo);
+    legacy_api(managed_foo.release());
+
+    assert(managed_foo.get() == nullptr);
+
+    UniquePtr<Doo> up(new Doo());
+    cout << "up  " << up.get() << '\n';
+    up.reset(new Doo());
+    cout << "up  " << up.get() << '\n';
+    up.reset();
+    if (up) {
+        cout << "up not nullptr \n";
+    }
+    else {
+        cout << "up is nullptr \n";
+    }
+
+    UniquePtr<Doo> up1(new Doo(1));
+    UniquePtr<Doo> up2(new Doo(2));
+    cout << "up1->val:" << up1->val << "  up2->val:" << up2->val << '\n';
+    up1.swap(up2);
+    cout << "up1->val:" << up1->val << "  up2->val:" << up2->val << '\n';
+}
+
 int main(){
     AnyTest();
     SharedPtrTest();
+    UniquePtrTest();
     return 0;
 }

@@ -1,22 +1,21 @@
 #ifndef __ANY_H__
 #define __ANY_H__
 #include <memory>
-using namespace std;
 
 namespace selfUtils {
 	class Any {
 		struct DataBase {
 			DataBase() = default;
 			virtual ~DataBase() = default;
-			virtual unique_ptr<DataBase> clone() const = 0;
+			virtual std::unique_ptr<DataBase> clone() const = 0;
 			virtual const type_info& getType() const = 0;
 		};
 		template<typename T>
 		struct DataImp : public DataBase {
 			DataImp(const T& t) : data(t) {}
-			DataImp(T&& t) :data(move(t)) {}
-			auto clone() const -> unique_ptr<DataBase> override {
-				return make_unique<DataImp<T>>(data);
+			DataImp(T&& t) :data(std::move(t)) {}
+			auto clone() const -> std::unique_ptr<DataBase> override {
+				return std::make_unique<DataImp<T>>(data);
 			}
 			auto getType() const -> const type_info & override {
 				return typeid(T);
@@ -43,10 +42,10 @@ namespace selfUtils {
 
 		}
 
-		Any(Any&& rhs) noexcept : dataPtr(move(rhs.dataPtr)) {}
+		Any(Any&& rhs) noexcept : dataPtr(std::move(rhs.dataPtr)) {}
 
 		auto operator=(Any&& rhs) noexcept ->Any& {
-			dataPtr = move(rhs.dataPtr);
+			dataPtr = std::move(rhs.dataPtr);
 			return *this;
 		}
 
@@ -63,25 +62,25 @@ namespace selfUtils {
 			else return false;
 		}
 
-		template<typename T, typename enable_if_t<!is_same<typename decay<T>::type, Any>::value, bool> = true>
-		Any(T&& t) :dataPtr(new DataImp<typename decay<T>::type>(forward<T>(t))) {}
+		template<typename T, typename std::enable_if_t<!std::is_same<typename std::decay<T>::type, Any>::value, bool> = true>
+		Any(T&& t) :dataPtr(new DataImp<typename std::decay<T>::type>(std::forward<T>(t))) {}
 
-		template<typename T, typename enable_if_t<!is_same<typename decay<T>::type, Any>::value, bool> = true>
+		template<typename T, typename std::enable_if_t<!std::is_same<typename std::decay<T>::type, Any>::value, bool> = true>
 		auto operator=(T&& t)->Any& {
-			dataPtr = make_unique<DataImp<typename decay<T>::type>>(forward<T>(t));
+			dataPtr = std::make_unique<DataImp<typename std::decay<T>::type>>(std::forward<T>(t));
 			return *this;
 		}
 	private:
-		unique_ptr<DataBase> dataPtr;
+		std::unique_ptr<DataBase> dataPtr;
 
 		template<typename T>
 		auto cast() ->T& {
 			if (isNull()) {
-				throw bad_cast();
+				throw std::bad_cast();
 			}
 			if (!isType<T>()) {
 				printf("error cast type %s to %s\n", getType().name(), typeid(T).name());
-				throw bad_cast();
+				throw std::bad_cast();
 			}
 
 			return static_cast<DataImp<T>*>(dataPtr.get())->data;
@@ -89,11 +88,11 @@ namespace selfUtils {
 		template<typename T>
 		auto cast() const -> const T& {
 			if (isNull()) {
-				throw bad_cast();
+				throw std::bad_cast();
 			}
 			if (!isType<T>()) {
 				printf("error cast type %s to %s\n", getType().name(), typeid(T).name());
-				throw bad_cast();
+				throw std::bad_cast();
 			}
 
 			return static_cast<const DataImp<T>*>(dataPtr.get())->data;

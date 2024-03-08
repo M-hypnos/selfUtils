@@ -2,26 +2,25 @@
 #define __SMART_PTR_H__
 
 namespace selfUtils {
-	template<typename T>
 	struct ResourceObj {
-		ResourceObj() : _ptr(nullptr), _sRefCount(nullptr), _wRefCount(nullptr) {}
-		ResourceObj(T* ptr) : _ptr(ptr), _sRefCount(new int(1)), _wRefCount(nullptr) {}
-		//ResourceObj(const ResourceObj& rhs) : _ptr(rhs._ptr), _sRefCount(rhs._sRefCount), _wRefCount(rhs._wRefCount) {}
+		ResourceObj() : _sRefCount(nullptr), _wRefCount(nullptr) {}
+		ResourceObj(const ResourceObj& rhs) : _sRefCount(rhs._sRefCount), _wRefCount(rhs._wRefCount) {}
 		auto sRefCount() -> const int {
 			return _sRefCount == nullptr ? 0 : *_sRefCount;
 		}
 		auto wRefCount() -> const int {
 			return _wRefCount == nullptr ? 0 : *_wRefCount;
 		}
-		auto retatinSRef() -> void {
-			if (_sRefCount == nullptr) return;
+		auto retatinSRef(bool needInit = false) -> void {
+			if (_sRefCount == nullptr) {
+				if (!needInit) return;
+				_sRefCount = new int(0);
+			}
 			(*_sRefCount)++;
 		}
 		auto releaseSRef() -> bool {
-			if (_ptr == nullptr) return false;
+			if (_sRefCount == nullptr) return false;
 			if (--(*_sRefCount) == 0) {
-				delete _ptr;
-				_ptr = nullptr;
 				delete _sRefCount;
 				_sRefCount = nullptr;
 				return wRefCount() == 0;
@@ -44,7 +43,6 @@ namespace selfUtils {
 			}
 			return false;
 		}
-		T* _ptr;
 		int* _sRefCount;
 		int* _wRefCount;
 	};
@@ -55,21 +53,30 @@ namespace selfUtils {
 	template<typename T>
 	class SharedPtr {
 	public:
-		SharedPtr() :_obj(nullptr) {}
-		SharedPtr(T* ptr) :_obj(new ResourceObj<T>(ptr)) {}
-		SharedPtr(const SharedPtr& rhs) :_obj(rhs._obj) {
+		SharedPtr() :_ptr(nullptr), _obj(nullptr) {}
+		SharedPtr(T* ptr) :_ptr(ptr), _obj(new ResourceObj()) {
+			retain(true);
+		}
+		SharedPtr(const SharedPtr& rhs) :_ptr(rhs._ptr), _obj(rhs._obj) {
 			retain();
 		}
+		template<typename U, typename std::enable_if_t<!std::is_same<typename std::decay<SharedPtr<U>>::type, SharedPtr<T>>::value, bool> = true>
+		SharedPtr<T>(const SharedPtr<U>& rhs) : _ptr(rhs.get()), _obj(rhs.getObj()) {
+			retain();
+		}
+
 		auto operator=(const SharedPtr& rhs)->SharedPtr& {
 			if (_obj == rhs._obj) {
 				return *this;
 			}
 			release();
+			_ptr = rhs._ptr;
 			_obj = rhs._obj;
 			retain();
 			return *this;
 		}
-		SharedPtr(SharedPtr&& rhs) noexcept :_obj(rhs._obj) {
+		SharedPtr(SharedPtr&& rhs) noexcept :_ptr(rhs._ptr), _obj(rhs._obj) {
+			rhs._ptr = nullptr;
 			rhs._obj = nullptr;
 		}
 		auto operator=(SharedPtr&& rhs) noexcept ->SharedPtr& {
@@ -77,22 +84,26 @@ namespace selfUtils {
 				return *this;
 			}
 			release();
+			_ptr = rhs._ptr;
 			_obj = rhs._obj;
+			rhs._ptr = nullptr;
 			rhs._obj = nullptr;
 			return *this;
 		}
 
-		auto operator->() -> const T* {
-			return _obj->_ptr;
+		auto operator->() const -> T* {
+			return _ptr;
 		}
-		auto operator*() -> const T& {
-			return *(_obj->_ptr);
+		auto operator*() const -> T& {
+			return *(_ptr);
 		}
-		auto get() -> const T* {
-			if (_obj == nullptr) return nullptr;
-			return _obj->_ptr;
+		auto get() const -> T* {
+			return _ptr;
 		}
-		auto use_count() -> const int {
+		auto getObj() const ->ResourceObj* {
+			return _obj;
+		}
+		auto use_count() const -> int {
 			if (_obj == nullptr) return 0;
 			return _obj->sRefCount();
 		}
@@ -101,34 +112,51 @@ namespace selfUtils {
 		}
 		auto reset() -> void {
 			release();
+			_ptr = nullptr;
 			_obj = nullptr;
 		}
 		auto reset(T* ptr) -> void {
 			release();
-			_obj = new ResourceObj<T>(ptr);
+			_ptr = ptr;
+			_obj = new ResourceObj();
+			retain(true);
 		}
 		auto swap(SharedPtr& rhs) -> void {
-			ResourceObj<T>* temp = _obj;
+			ResourceObj* temp = _obj;
+			T* tempPtr = _ptr;
+			_ptr = rhs._ptr;
 			_obj = rhs._obj;
+			rhs._ptr = tempPtr;
 			rhs._obj = temp;
 		}
 		operator bool() const {
-			return _obj != nullptr && _obj->_ptr != nullptr;
+			return _obj != nullptr && _ptr != nullptr;
 		}
 		friend class WeakPtr<T>;
 	private:
-		auto retain() -> void {
+		auto retain(bool needInit = false) -> void {
 			if (_obj == nullptr) return;
-			_obj->retatinSRef();
+			_obj->retatinSRef(needInit);
 		}
 		auto release() -> void {
 			if (_obj == nullptr) return;
 			if (_obj->releaseSRef()) {
 				delete _obj;
 				_obj = nullptr;
+				delete _ptr;
+				_ptr = nullptr;
 			}
+			checkPtrRef();
 		}
-		ResourceObj<T>* _obj;
+		auto checkPtrRef() -> void {
+			if (_ptr == nullptr) return;
+			if (_obj == nullptr) return;
+			if (_obj->sRefCount() > 0) return;
+			delete _ptr;
+			_ptr = nullptr;
+		}
+		T* _ptr;
+		ResourceObj* _obj;
 	};
 
 	template<typename T>
@@ -150,17 +178,17 @@ namespace selfUtils {
 			rhs._ptr = nullptr;
 			return *this;
 		}
-		auto operator->() -> const T* {
+		auto operator->() const -> T* {
 			return _ptr;
 		}
-		auto operator*() -> const T& {
+		auto operator*() const -> T& {
 			if (_ptr == nullptr) return nullptr;
 			return *_ptr;
 		}
 		operator bool() const {
 			return _ptr != nullptr;
 		}
-		auto get() -> const T* {
+		auto get() const -> T* {
 			return _ptr;
 		}
 		auto release() -> T* {
@@ -197,16 +225,17 @@ namespace selfUtils {
 	template<typename T>
 	class WeakPtr {
 	public:
-		WeakPtr() :_obj(nullptr) {}
-		WeakPtr(const SharedPtr<T>& rhs) : _obj(rhs._obj) {
+		WeakPtr() :_ptr(nullptr), _obj(nullptr) {}
+		WeakPtr(const SharedPtr<T>& rhs) : _ptr(rhs._ptr), _obj(rhs._obj) {
 			retain(true);
 		}
-		WeakPtr(const WeakPtr& rhs) : _obj(rhs._obj) {
+		WeakPtr(const WeakPtr& rhs) : _ptr(rhs._ptr), _obj(rhs._obj) {
 			retain();
 		}
 		auto operator=(const SharedPtr<T>& rhs)->WeakPtr& {
 			if (_obj == rhs._obj) return *this;
 			release();
+			_ptr = rhs._ptr;
 			_obj = rhs._obj;
 			retain(true);
 			return *this;
@@ -214,11 +243,13 @@ namespace selfUtils {
 		auto operator=(const WeakPtr& rhs)->WeakPtr& {
 			if (_obj == rhs._obj) return *this;
 			release();
+			_ptr = rhs._ptr;
 			_obj = rhs._obj;
 			retain();
 			return *this;
 		}
-		WeakPtr(WeakPtr&& rhs) noexcept :_obj(rhs._obj) {
+		WeakPtr(WeakPtr&& rhs) noexcept :_ptr(rhs._ptr), _obj(rhs._obj) {
+			rhs._ptr = nullptr;
 			rhs._obj = nullptr;
 		}
 		auto operator=(WeakPtr&& rhs) noexcept ->WeakPtr& {
@@ -226,29 +257,36 @@ namespace selfUtils {
 				return *this;
 			}
 			release();
+			_ptr = rhs._ptr;
 			_obj = rhs._obj;
+			rhs._ptr = nullptr;
 			rhs._obj = nullptr;
 			return *this;
 		}
 		auto reset() -> void {
 			release();
+			_ptr = nullptr;
 			_obj = nullptr;
 		}
 		auto swap(WeakPtr& rhs) -> void {
-			ResourceObj<T>* temp = _obj;
+			T* tempPtr = _ptr;
+			ResourceObj* temp = _obj;
+			_ptr = rhs._ptr;
 			_obj = rhs._obj;
+			rhs._ptr = tempPtr;
 			rhs._obj = temp;
 		}
-		auto use_count() -> const int {
+		auto use_count() const -> int {
 			if (_obj == nullptr) return 0;
 			return _obj->sRefCount();
 		}
-		auto expired() -> const bool {
+		auto expired() const -> bool {
 			return use_count() == 0;
 		}
-		auto lock() -> SharedPtr<T> {
+		auto lock() const -> SharedPtr<T> {
 			SharedPtr<T> sp = SharedPtr<T>();
 			if (expired()) return sp;
+			sp._ptr = _ptr;
 			sp._obj = _obj;
 			if (sp._obj != nullptr) {
 				sp._obj->retatinSRef();
@@ -262,6 +300,7 @@ namespace selfUtils {
 				delete _obj;
 				_obj = nullptr;
 			}
+			_ptr = nullptr;
 		}
 		
 	private:
@@ -276,7 +315,8 @@ namespace selfUtils {
 				_obj = nullptr;
 			}
 		}
-		ResourceObj<T>* _obj;
+		T* _ptr;
+		ResourceObj* _obj;
 	};
 }
 

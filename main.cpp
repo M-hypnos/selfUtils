@@ -2,7 +2,7 @@
 //
 
 #include <iostream>
-//#include <vld.h>
+#include <vld.h>
 #include <iostream>
 #include "utils/Any.h"
 #include "utils/SmartPtr.h"
@@ -382,6 +382,38 @@ void WeakPtrTest() {
     observe(weakP);
 }
 
+class Parent {
+public:
+    Parent() {
+        printf("Parent ctor\n");
+    }
+    virtual ~Parent() {
+        printf("~Parent destroy\n");
+    }
+    void normalTest() {
+        printf("Parent normalTest \n");
+    }
+    virtual void virtualTest() {
+        printf("Parent virtualTest \n");
+    }
+};
+
+class Child: public Parent {
+public:
+    Child() {
+        printf("Child ctor\n");
+    }
+    virtual ~Child() {
+        printf("~Child destroy\n");
+    }
+    void normalTest() {
+        printf("Child normalTest \n");
+    }
+    virtual void virtualTest() {
+        printf("Child virtualTest \n");
+    }
+};
+
 void SmartPtrTest() {
     cout << "-----" << '\n';
     SharedPtr<int> sp1(new int(10));
@@ -402,6 +434,27 @@ void SmartPtrTest() {
     cout << sptr1.use_count() << '\n';
     cout << sptr2.use_count() << '\n';
     cout << sptr3.use_count() << '\n';
+
+    {
+        SharedPtr<Parent> p1(new Child());
+        p1->normalTest();
+        p1->virtualTest();
+
+        SharedPtr<Child> c1 = new Child();
+        SharedPtr<Parent> p2 = c1;
+        p2->normalTest();
+        p2->virtualTest();
+        cout << "p2: " << p2.use_count() << '\n';
+        SharedPtr<Parent> p3 = SharedPtr<Child>(new Child());
+        p3->normalTest();
+        p3->virtualTest();
+        cout << "p3: " << p3.use_count() << '\n';
+        p1 = p3;
+        cout<< "c1: " << c1.use_count() << '\n';
+        p2 = p3;
+        cout<< "c1: " << c1.use_count() << '\n';
+        cout << "p3: " << p3.use_count() << '\n';
+    }
 }
 
 int main() {
